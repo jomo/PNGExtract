@@ -1,0 +1,60 @@
+#!/usr/bin/env ruby
+# extracts embedded PNG files from binary files
+
+def extract_png(input, output)
+  hdr = input.read(8)
+  hex = hdr.unpack("C8")
+  if hex != [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+    puts "Not a PNG File: #{hex}"
+    return
+  end
+  output.write(hdr)
+  loop do
+    chunk_type = extract_chunk(input, output)
+    break if  chunk_type.nil? || chunk_type == "IEND"
+  end
+end
+
+def extract_chunk(input, output)
+  lenword = input.read(4)
+  length  = lenword.unpack("N")[0]
+  type    = input.read(4)
+  data    = length >= 0 ? input.read(length) : ""
+  crc     = input.read(4)
+
+  if length < 0 || !(type[0,1] === ("A".."z"))
+    return nil
+  end
+
+  output.write lenword
+  output.write type
+  output.write data
+  output.write crc
+  return type
+end
+
+unless ARGV[0]
+  puts "Usage:"
+  puts "  pngextract <binary file> [output filename]"
+  exit 1
+end
+
+infile  = File.new ARGV[0], "rb"
+outname = ARGV[1] || ARGV[0]
+
+num = 0
+loop do
+  origpos = infile.pos
+  regex = Regexp.new("\211PNG", nil, "n").match(infile.read)
+  unless regex
+    puts "done"
+    exit
+  end
+  puts "Found PNG ##{num}"
+  newpos  = regex.begin(0)
+  infile.seek origpos + newpos
+  outfile = File.new(outname + ".#{num}.png", "wb")
+  extract_png(infile, outfile)
+  puts "PNG written to #{File.basename(outfile)}"
+  num += 1
+end
